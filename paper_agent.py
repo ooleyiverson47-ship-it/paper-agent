@@ -1,9 +1,11 @@
+# paper_agent.py
 import asyncio
 import schedule
 import time
 import json
-import os  # 添加这一行
-from datetime import datetime
+import os
+import hashlib
+from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from dataclasses import dataclass
 import arxiv
@@ -22,12 +24,112 @@ class Paper:
     categories: List[str]
 
 
+class PaperTracker:
+    """论文追踪器 - 记录已发送的论文"""
+
+    def __init__(self, history_file="sent_papers.json"):
+        self.history_file = history_file
+        self.sent_papers = self.load_history()
+
+    def load_history(self) -> set:
+        """加载已发送论文历史"""
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return set(data.get("sent_papers", []))
+            except:
+                return set()
+        return set()
+
+    def save_history(self):
+        """保存论文历史"""
+        data = {
+            "last_updated": datetime.now().isoformat(),
+            "total_count": len(self.sent_papers),
+            "sent_papers": list(self.sent_papers)
+        }
+        with open(self.history_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_paper_id(self, paper) -> str:
+        """生成论文唯一ID"""
+        title = paper.title if hasattr(paper, 'title') else paper.get('title', '')
+        authors = ','.join(paper.authors[:3] if hasattr(paper, 'authors') else paper.get('authors', [])[:3])
+        published = paper.published if hasattr(paper, 'published') else paper.get('published', '')
+        unique_str = f"{title}|{authors}|{published}"
+        return hashlib.md5(unique_str.encode()).hexdigest()
+
+    def is_new_paper(self, paper) -> bool:
+        """检查论文是否未发送过"""
+        paper_id = self.get_paper_id(paper)
+        return paper_id not in self.sent_papers
+
+    def mark_as_sent(self, paper):
+        """标记论文为已发送"""
+        paper_id = self.get_paper_id(paper)
+        self.sent_papers.add(paper_id)
+
+    def mark_batch_as_sent(self, papers):
+        """批量标记论文为已发送"""
+        for paper in papers:
+            self.mark_as_sent(paper)
+        self.save_history()
+
+    def get_new_papers(self, papers):
+        """过滤出未发送过的新论文"""
+        return [p for p in papers if self.is_new_paper(p)]
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        return {
+            "total_sent": len(self.sent_papers),
+            "last_updated": datetime.now().isoformat()
+        }
+
+
+class LastRunTracker:
+    """记录上次运行时间"""
+
+    def __init__(self, state_file="last_run.json"):
+        self.state_file = state_file
+        self.state = self.load_state()
+
+    def load_state(self) -> Dict[str, Any]:
+        """加载状态"""
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+
+    def save_state(self):
+        """保存状态"""
+        with open(self.state_file, 'w', encoding='utf-8') as f:
+            json.dump(self.state, f, ensure_ascii=False, indent=2)
+
+    def get_last_run(self) -> datetime:
+        """获取上次运行时间"""
+        last_run_str = self.state.get("last_run")
+        if last_run_str:
+            return datetime.fromisoformat(last_run_str)
+        return None
+
+    def set_last_run(self, run_time: datetime):
+        """设置本次运行时间"""
+        self.state["last_run"] = run_time.isoformat()
+        self.save_state()
+
+
 class QwenClient:
     """通义千问客户端"""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+        print(f"✅ QwenClient初始化成功")
 
     async def async_call(self, prompt: str) -> str:
         """调用通义千问API"""
@@ -49,7 +151,7 @@ class QwenClient:
         }
 
         try:
-            response = requests.post(self.base_url, headers=headers, json=data)
+            response = requests.post(self.base_url, headers=headers, json=data, timeout=30)
             result = response.json()
             if response.status_code == 200:
                 return result["output"]["choices"][0]["message"]["content"]
@@ -68,8 +170,68 @@ class PaperQueryAgent:
         self.model = model_client
         self.arxiv_client = arxiv.Client()
 
+    def query_papers_since(self, query: str, since_date: datetime, max_results: int = 10) -> List[Paper]:
+        """查询指定日期之后发布的论文"""
+        try:
+            date_str = since_date.strftime("%Y%m%d000000")
+            full_query = f"{query} AND submittedDate:[{date_str} TO *]"
+
+            print(f"  📅 查询条件: {since_date.strftime('%Y-%m-%d %H:%M')} 之后发布的论文")
+
+            search = arxiv.Search(
+                query=full_query,
+                max_results=max_results,
+                sort_by=arxiv.SortCriterion.SubmittedDate
+            )
+
+            papers = []
+            for result in self.arxiv_client.results(search):
+                paper = Paper(
+                    title=result.title,
+                    authors=[author.name for author in result.authors],
+                    abstract=result.summary,
+                    published=result.published.strftime("%Y-%m-%d"),
+                    url=result.entry_id,
+                    pdf_url=result.pdf_url,
+                    categories=result.categories
+                )
+                papers.append(paper)
+            return papers
+        except Exception as e:
+            print(f"论文查询失败: {e}")
+            return []
+
+    def query_papers_today(self, query: str, max_results: int = 10) -> List[Paper]:
+        """查询今天发布的论文"""
+        try:
+            today = datetime.now().strftime("%Y%m%d000000")
+            full_query = f"{query} AND submittedDate:[{today} TO *]"
+
+            search = arxiv.Search(
+                query=full_query,
+                max_results=max_results,
+                sort_by=arxiv.SortCriterion.SubmittedDate
+            )
+
+            papers = []
+            for result in self.arxiv_client.results(search):
+                paper = Paper(
+                    title=result.title,
+                    authors=[author.name for author in result.authors],
+                    abstract=result.summary,
+                    published=result.published.strftime("%Y-%m-%d"),
+                    url=result.entry_id,
+                    pdf_url=result.pdf_url,
+                    categories=result.categories
+                )
+                papers.append(paper)
+            return papers
+        except Exception as e:
+            print(f"论文查询失败: {e}")
+            return []
+
     def query_papers(self, query: str, max_results: int = 10) -> List[Paper]:
-        """查询论文"""
+        """普通查询（向后兼容）"""
         try:
             search = arxiv.Search(
                 query=query,
@@ -108,9 +270,9 @@ class PaperAnalysisAgent:
         请分析以下学术论文，并提供详细的分析报告：
 
         标题：{paper.title}
-        作者：{', '.join(paper.authors)}
+        作者：{', '.join(paper.authors[:5])}
         发表时间：{paper.published}
-        摘要：{paper.abstract}
+        摘要：{paper.abstract[:1000]}
 
         请提供：
         1. 研究目标
@@ -118,9 +280,8 @@ class PaperAnalysisAgent:
         3. 主要发现
         4. 创新点
         5. 应用价值
-        6. 综合评价
 
-        请用中文回答，保持简洁但全面。
+        请用中文回答，保持简洁。
         """
 
         try:
@@ -142,182 +303,8 @@ class PaperAnalysisAgent:
         """批量分析"""
         results = []
         for i, paper in enumerate(papers):
-            print(f"正在分析第 {i + 1}/{len(papers)} 篇论文...")
+            print(f"  正在分析第 {i + 1}/{len(papers)} 篇论文...")
             result = await self.analyze_paper(paper)
             results.append(result)
-            await asyncio.sleep(2)  # 避免API请求过快
+            await asyncio.sleep(1)
         return results
-
-
-class PaperScheduler:
-    """论文定时调度器"""
-
-    def __init__(self, query_agent: PaperQueryAgent, analysis_agent: PaperAnalysisAgent):
-        self.query_agent = query_agent
-        self.analysis_agent = analysis_agent
-        self.tasks = []
-
-    def schedule_paper_query(self, query: str, schedule_time: str, max_results: int = 5):
-        """定时查询论文"""
-
-        def job():
-            print(f"\n{'=' * 50}")
-            print(f"执行定时查询任务: {datetime.now()}")
-            print(f"查询内容: {query}")
-
-            # 查询论文
-            papers = self.query_agent.query_papers(query, max_results)
-            print(f"找到 {len(papers)} 篇论文")
-
-            if papers:
-                # 分析论文
-                print("开始分析论文...")
-                analysis_results = asyncio.run(
-                    self.analysis_agent.batch_analyze(papers)
-                )
-                # 保存结果
-                self.save_results(query, analysis_results)
-
-        schedule.every().day.at(schedule_time).do(job)
-        self.tasks.append({"query": query, "time": schedule_time})
-        print(f"已添加定时任务: 每天 {schedule_time} 查询 '{query}'")
-
-    def schedule_recurring_query(self, query: str, interval_minutes: int, max_results: int = 5):
-        """周期性查询论文"""
-
-        def job():
-            print(f"\n{'=' * 50}")
-            print(f"执行周期性查询任务: {datetime.now()}")
-            print(f"查询内容: {query}")
-
-            papers = self.query_agent.query_papers(query, max_results)
-            print(f"找到 {len(papers)} 篇论文")
-
-            if papers:
-                analysis_results = asyncio.run(
-                    self.analysis_agent.batch_analyze(papers)
-                )
-                self.save_results(query, analysis_results)
-
-        schedule.every(interval_minutes).minutes.do(job)
-        self.tasks.append({"query": query, "interval": f"{interval_minutes}分钟"})
-        print(f"已添加周期性任务: 每 {interval_minutes} 分钟查询 '{query}'")
-
-    def save_results(self, query: str, results: List[Dict[str, Any]]):
-        """保存分析结果"""
-        filename = f"paper_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-
-        output = {
-            "query": query,
-            "timestamp": datetime.now().isoformat(),
-            "results": []
-        }
-
-        for result in results:
-            output["results"].append({
-                "title": result["paper"].title,
-                "authors": result["paper"].authors,
-                "published": result["paper"].published,
-                "url": result["paper"].url,
-                "analysis": result["analysis"],
-                "analyzed_at": result["analyzed_at"]
-            })
-
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
-
-        print(f"结果已保存到: {filename}")
-
-        # 打印摘要
-        print("\n论文分析摘要:")
-        for result in results[:3]:
-            print(f"\n标题: {result['paper'].title}")
-            print(f"分析: {result['analysis'][:200]}...")
-
-    def run(self):
-        """运行调度器"""
-        print("论文定时查询系统已启动...")
-        print("当前任务列表:")
-        for task in self.tasks:
-            print(f"  {task}")
-        print("\n等待定时任务执行...")
-        print("提示: 按 Ctrl+C 停止程序\n")
-
-        try:
-            while True:
-                schedule.run_pending()
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\n程序已停止")
-
-
-async def run_once():
-    """单次运行（不循环）"""
-    print("单次论文查询模式")
-    print("=" * 50)
-
-    # 使用通义千问
-    api_key = "sk-59b02bd91f2b4c1e9ece97f0900aa750"
-    model_client = QwenClient(api_key)
-
-    # 创建智能体
-    query_agent = PaperQueryAgent("query_agent", model_client)
-    analysis_agent = PaperAnalysisAgent("analysis_agent", model_client)
-
-    # 查询论文
-    print("正在查询论文...")
-    papers = query_agent.query_papers("machine learning", max_results=3)
-    print(f"找到 {len(papers)} 篇论文\n")
-
-    if papers:
-        # 分析论文
-        print("正在分析论文...")
-        results = await analysis_agent.batch_analyze(papers)
-
-        # 保存结果
-        scheduler = PaperScheduler(query_agent, analysis_agent)
-        scheduler.save_results("machine learning", results)
-
-        print("\n完成！")
-
-
-def main():
-    """主函数 - 定时运行模式"""
-    # 使用通义千问
-    api_key = os.getenv("QWEN_API_KEY", "")
-    model_client = QwenClient(api_key)
-
-    # 创建智能体
-    query_agent = PaperQueryAgent("query_agent", model_client)
-    analysis_agent = PaperAnalysisAgent("analysis_agent", model_client)
-
-    # 创建调度器
-    scheduler = PaperScheduler(query_agent, analysis_agent)
-
-    # 添加测试任务（每5分钟查询一次，用于测试）
-    scheduler.schedule_recurring_query(
-        "machine learning",
-        interval_minutes=5,  # 每5分钟
-        max_results=3
-    )
-
-    # 正式任务（可选）
-    # scheduler.schedule_paper_query(
-    #     "deep learning",
-    #     "09:00",
-    #     max_results=5
-    # )
-
-    # 运行调度器
-    scheduler.run()
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        # 单次运行模式
-        asyncio.run(run_once())
-    else:
-        # 定时运行模式
-        main()
