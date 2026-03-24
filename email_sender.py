@@ -242,6 +242,6 @@ class EmailConfig:
     SMTP_PORT = 465  # SSL端口
 
     # 请替换为你的邮箱信息
-    SENDER_EMAIL = "2733409667@qq.com"  # 发送邮箱
-    SENDER_PASSWORD = "dsjjpyyeiniqdhaa"  # SMTP授权码（不是登录密码）
-    RECEIVER_EMAIL = "2733409667@qq.com"  # 接收邮箱
+    SENDER_EMAIL = ""# 发送邮箱
+    SENDER_PASSWORD = ""# SMTP授权码（不是登录密码）
+    RECEIVER_EMAIL = "" # 接收邮箱

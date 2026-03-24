@@ -16,7 +16,7 @@ async def query_and_send():
     print(f"开始执行论文查询任务: {datetime.now()}")
 
     # 从环境变量获取配置（GitHub Secrets）
-    api_key = os.getenv("QWEN_API_KEY", "sk-59b02bd91f2b4c1e9ece97f0900aa750")
+    api_key = os.getenv("QWEN_API_KEY", "")
     sender_email = os.getenv("EMAIL_SENDER", "")
     sender_password = os.getenv("EMAIL_PASSWORD", "")
     receiver_email = os.getenv("EMAIL_RECEIVER", "")

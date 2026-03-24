@@ -7,7 +7,7 @@ load_dotenv()
 
 class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
+    MODEL_NAME = os.getenv("MODEL_NAME", "Qianwen")
 
     # 论文查询配置
     DEFAULT_MAX_RESULTS = 10

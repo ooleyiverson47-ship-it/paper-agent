@@ -2,6 +2,7 @@ import asyncio
 import schedule
 import time
 import json
+import os  # 添加这一行
 from datetime import datetime
 from typing import List, Dict, Any
 from dataclasses import dataclass
@@ -283,7 +284,7 @@ async def run_once():
 def main():
     """主函数 - 定时运行模式"""
     # 使用通义千问
-    api_key = "sk-59b02bd91f2b4c1e9ece97f0900aa750"
+    api_key = os.getenv("QWEN_API_KEY", "")
     model_client = QwenClient(api_key)
 
     # 创建智能体
