@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
 from paper_agent import (
-    PaperQueryAgent, PaperAnalysisAgent, QwenClient,
-    PaperTracker, LastRunTracker
+    PaperQueryAgent, PaperAnalysisAgent, QwenClient, LastRunTracker
 )
+from paper_tracker import PaperTracker 
 from email_sender import EmailSender, EmailConfig
 
 
