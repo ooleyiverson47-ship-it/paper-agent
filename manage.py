@@ -24,7 +24,7 @@ def show_status():
         print(f"  上次运行: {last_run.strftime('%Y-%m-%d %H:%M:%S')}")
     else:
         print(f"  尚未运行")
-    print(f"  下次运行: 每天 9:00 和 15:00 (自动)")
+    print(f"  下次运行: 每天 8:00 (自动)")
 
 
 def reset_history():
