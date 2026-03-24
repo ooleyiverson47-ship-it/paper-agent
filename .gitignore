@@ -1,25 +1,12 @@
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual Environment
-venv/
-env/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-
-# Local files
+*.pyc
+*.pyo
+.env
 *.json
 *.html
 *.log
-*.db
-
-# OS
-.DS_Store
-Thumbs.db
+.vscode/
+.idea/
+sent_papers.json
+last_run.json
+daily_report_*.json
