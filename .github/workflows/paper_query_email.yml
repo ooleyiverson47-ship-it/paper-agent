@@ -2,11 +2,8 @@ name: 定时论文查询并发送邮件
 
 on:
   schedule:
-    # 每天北京时间上午9点执行（UTC时间1:00）
     - cron: '0 1 * * *'
-    # 每天北京时间下午3点执行（UTC时间7:00）
     - cron: '0 7 * * *'
-  # 允许手动触发
   workflow_dispatch:
 
 jobs:
@@ -15,10 +12,10 @@ jobs:
     
     steps:
     - name: 检出代码
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     
     - name: 设置 Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
     
@@ -26,7 +23,6 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install arxiv requests schedule
-        pip list
     
     - name: 运行论文查询
       env:
@@ -38,9 +34,11 @@ jobs:
         python github_runner.py
     
     - name: 上传结果
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: paper-results
         path: |
           paper_results_*.json
           paper_report_*.html
+        if-no-files-found: warn
+        retention-days: 90
