@@ -1,3 +1,28 @@
+# paper_agent.py
+import asyncio
+import schedule
+import time
+import json
+import os
+import hashlib
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
+from dataclasses import dataclass
+import arxiv
+import requests
+
+
+@dataclass
+class Paper:
+    """论文数据结构"""
+    title: str
+    authors: List[str]
+    abstract: str
+    published: str
+    url: str
+    pdf_url: str
+    categories: List[str]
+
 class PaperQueryAgent:
     """论文查询智能体"""
 
@@ -11,8 +36,6 @@ class PaperQueryAgent:
         try:
             print(f"  📅 查询条件: {since_date.strftime('%Y-%m-%d %H:%M')} 之后发布的论文")
 
-            # 不把 submittedDate 直接拼进 arXiv query
-            # 先按关键词查，再在本地按时间过滤
             search = arxiv.Search(
                 query=query,
                 max_results=max_results * 5,
@@ -23,7 +46,6 @@ class PaperQueryAgent:
             for result in self.arxiv_client.results(search):
                 published_dt = result.published.replace(tzinfo=None)
 
-                # 已按时间降序，遇到更早的结果可直接停止
                 if published_dt < since_date:
                     break
 
@@ -77,7 +99,6 @@ class PaperQueryAgent:
                     categories=result.categories
                 )
                 papers.append(paper)
-
             return papers
 
         except Exception as e:
