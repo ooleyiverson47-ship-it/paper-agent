@@ -16,22 +16,21 @@ from paper_tracker import PaperTracker
 from email_sender import EmailSender, EmailConfig
 
 
-def build_queries() -> List[Dict[str, Any]]:
-    """定义要查询的领域"""
+def build_queries():
     return [
         {
             "name": "机器学习与深度学习",
-            "query": 'all:"machine learning" OR all:"deep learning" OR all:"neural network"',
+            "query": '"machine learning" OR "deep learning" OR "neural network"',
             "max_results": 10,
         },
         {
             "name": "计算机视觉",
-            "query": 'all:"computer vision" OR all:"image recognition" OR all:"object detection"',
+            "query": '"computer vision" OR "image recognition" OR "object detection"',
             "max_results": 10,
         },
         {
             "name": "自然语言处理",
-            "query": 'all:"natural language processing" OR all:"large language model" OR all:"LLM"',
+            "query": '"natural language processing" OR "large language model" OR "LLM"',
             "max_results": 10,
         },
     ]
@@ -108,13 +107,19 @@ async def query_and_send() -> int:
     sender_email = os.getenv("EMAIL_SENDER", "").strip()
     sender_password = os.getenv("EMAIL_PASSWORD", "").strip()
     receiver_email = os.getenv("EMAIL_RECEIVER", "").strip()
-
+    elsevier_api_key = os.getenv("ELSEVIER_API_KEY", "").strip()
+    
     # 检查 API 配置
     if not api_key:
         print("❌ 错误：未设置 QWEN_API_KEY 环境变量")
         print("请在 GitHub Secrets 中配置 QWEN_API_KEY")
         return 1
 
+    if not elsevier_api_key:
+    print("❌ 错误：未设置 ELSEVIER_API_KEY 环境变量")
+    print("请在 GitHub Secrets 中配置 ELSEVIER_API_KEY")
+    return 1
+    
     # 检查邮件配置
     if not sender_email or not sender_password or not receiver_email:
         print("❌ 邮件配置未设置完整，无法发送邮件")
