@@ -116,9 +116,9 @@ async def query_and_send() -> int:
         return 1
 
     if not elsevier_api_key:
-    print("❌ 错误：未设置 ELSEVIER_API_KEY 环境变量")
-    print("请在 GitHub Secrets 中配置 ELSEVIER_API_KEY")
-    return 1
+        print("❌ 错误：未设置 ELSEVIER_API_KEY 环境变量")
+        print("请在 GitHub Secrets 中配置 ELSEVIER_API_KEY")
+        return 1
     
     # 检查邮件配置
     if not sender_email or not sender_password or not receiver_email:
