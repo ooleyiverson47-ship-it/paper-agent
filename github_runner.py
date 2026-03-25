@@ -73,23 +73,22 @@ async def query_and_send():
 
     # 定义要查询的领域
     queries = [
-        {
-            "name": "机器学习与深度学习",
-            "query": "machine learning OR deep learning OR neural networks",
-            "max_results": 10
-        },
-        {
-            "name": "计算机视觉",
-            "query": "computer vision OR image recognition OR object detection",
-            "max_results": 10
-        },
-        {
-            "name": "自然语言处理",
-            "query": "natural language processing OR large language model OR LLM",
-            "max_results": 10
-        }
-    ]
-
+    {
+        "name": "机器学习与深度学习",
+        "query": 'all:"machine learning" OR all:"deep learning" OR all:"neural network"',
+        "max_results": 10
+    },
+    {
+        "name": "计算机视觉",
+        "query": 'all:"computer vision" OR all:"image recognition" OR all:"object detection"',
+        "max_results": 10
+    },
+    {
+        "name": "自然语言处理",
+        "query": 'all:"natural language processing" OR all:"large language model" OR all:"LLM"',
+        "max_results": 10
+    }
+]
     all_new_papers = []
     category_stats = {}
     total_found = 0
