@@ -2,44 +2,112 @@ name: 定时论文查询并发送邮件
 
 on:
   schedule:
-    # 每天北京时间上午8点执行（UTC时间0:00）
-    - cron: '0 0 * * *'
+    - cron: '0 9 * * *'
+      timezone: 'Asia/Shanghai'
+    - cron: '0 15 * * *'
+      timezone: 'Asia/Shanghai'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-agent-schedule
+  cancel-in-progress: false
 
 jobs:
   query-and-send:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: 设置 Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
 
-    - name: 安装依赖
-      run: |
-        pip install --upgrade pip
-        pip install arxiv requests schedule
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: 运行论文查询
-      env:
-        QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
-      run: |
-        python github_runner.py
+      - name: 校验必要 Secrets
+        env:
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: |
+          python - <<'PY'
+          import os, sys
 
-    - name: 上传结果
-      uses: actions/upload-artifact@v4
-      with:
-        name: paper-results
-        path: |
-          daily_report_*.json
-          sent_papers.json
-          last_run.json
-        if-no-files-found: warn
-        retention-days: 90
+          required = [
+              "QWEN_API_KEY",
+              "EMAIL_SENDER",
+              "EMAIL_PASSWORD",
+              "EMAIL_RECEIVER",
+          ]
+          missing = [k for k in required if not os.getenv(k)]
+          if missing:
+              print("❌ 缺少 Secrets:", ", ".join(missing))
+              sys.exit(1)
+          print("✅ Secrets 检查通过")
+          PY
+
+      - name: 初始化状态文件
+        run: |
+          if [ ! -f sent_papers.json ]; then
+            cat > sent_papers.json <<'JSON'
+          {
+            "last_updated": "",
+            "total_count": 0,
+            "sent_papers": []
+          }
+          JSON
+          fi
+
+          if [ ! -f last_run.json ]; then
+            echo '{}' > last_run.json
+          fi
+
+      - name: 运行论文查询
+        env:
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: |
+          python github_runner.py
+
+      - name: 上传结果归档
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-results
+          path: |
+            daily_report_*.json
+            sent_papers.json
+            last_run.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: 提交状态文件回仓库
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add sent_papers.json last_run.json
+
+          if git diff --cached --quiet; then
+            echo "没有状态变更，无需提交"
+          else
+            git commit -m "chore: update paper-agent state [skip ci]"
+            git push
+          fi
