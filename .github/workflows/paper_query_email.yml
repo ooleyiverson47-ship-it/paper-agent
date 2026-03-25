@@ -40,6 +40,7 @@ jobs:
       - name: 校验必要 Secrets
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          ELSEVIER_API_KEY: ${{ secrets.ELSEVIER_API_KEY }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
@@ -50,14 +51,17 @@ jobs:
 
           required = [
               "QWEN_API_KEY",
+              "ELSEVIER_API_KEY",
               "EMAIL_SENDER",
               "EMAIL_PASSWORD",
               "EMAIL_RECEIVER",
           ]
+
           missing = [k for k in required if not os.getenv(k)]
           if missing:
               print("❌ 缺少 Secrets:", ", ".join(missing))
               sys.exit(1)
+
           print("✅ Secrets 检查通过")
           PY
 
@@ -80,6 +84,8 @@ jobs:
       - name: 运行论文查询
         env:
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+          ELSEVIER_API_KEY: ${{ secrets.ELSEVIER_API_KEY }}
+          ELSEVIER_INSTTOKEN: ${{ secrets.ELSEVIER_INSTTOKEN }}
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
@@ -112,5 +118,5 @@ jobs:
           fi
 
           git commit -m "chore: update paper-agent state [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}"
-          git push
+          git pull --rebase origin main
+          git push origin HEAD:main
