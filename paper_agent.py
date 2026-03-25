@@ -171,35 +171,45 @@ class PaperQueryAgent:
         self.arxiv_client = arxiv.Client()
 
     def query_papers_since(self, query: str, since_date: datetime, max_results: int = 10) -> List[Paper]:
-        """查询指定日期之后发布的论文"""
-        try:
-            date_str = since_date.strftime("%Y%m%d000000")
-            full_query = f"{query} AND submittedDate:[{date_str} TO *]"
+    """查询指定日期之后发布的论文"""
+    try:
+        print(f"  📅 查询条件: {since_date.strftime('%Y-%m-%d %H:%M')} 之后发布的论文")
 
-            print(f"  📅 查询条件: {since_date.strftime('%Y-%m-%d %H:%M')} 之后发布的论文")
+        # 不把 submittedDate 直接拼进 arXiv query
+        # 先按关键词查，再在本地按时间过滤
+        search = arxiv.Search(
+            query=query,
+            max_results=max_results * 5,
+            sort_by=arxiv.SortCriterion.SubmittedDate
+        )
 
-            search = arxiv.Search(
-                query=full_query,
-                max_results=max_results,
-                sort_by=arxiv.SortCriterion.SubmittedDate
+        papers = []
+        for result in self.arxiv_client.results(search):
+            published_dt = result.published.replace(tzinfo=None)
+
+            # 已经按时间降序了，遇到更早的可以直接停
+            if published_dt < since_date:
+                continue
+
+            paper = Paper(
+                title=result.title,
+                authors=[author.name for author in result.authors],
+                abstract=result.summary,
+                published=result.published.strftime("%Y-%m-%d"),
+                url=result.entry_id,
+                pdf_url=result.pdf_url,
+                categories=result.categories
             )
+            papers.append(paper)
 
-            papers = []
-            for result in self.arxiv_client.results(search):
-                paper = Paper(
-                    title=result.title,
-                    authors=[author.name for author in result.authors],
-                    abstract=result.summary,
-                    published=result.published.strftime("%Y-%m-%d"),
-                    url=result.entry_id,
-                    pdf_url=result.pdf_url,
-                    categories=result.categories
-                )
-                papers.append(paper)
-            return papers
-        except Exception as e:
-            print(f"论文查询失败: {e}")
-            return []
+            if len(papers) >= max_results:
+                break
+
+        return papers
+
+    except Exception as e:
+        print(f"论文查询失败: {e}")
+        return []
 
     def query_papers_today(self, query: str, max_results: int = 10) -> List[Paper]:
         """查询今天发布的论文"""
