@@ -109,6 +109,7 @@ class PaperQueryAgent:
 
     def _request_json(self, params: Dict[str, Any]) -> Dict[str, Any]:
         last_error = None
+
         for attempt in range(3):
             try:
                 response = self.session.get(
@@ -164,11 +165,75 @@ class PaperQueryAgent:
         return None
 
     def _parse_authors(self, entry: Dict[str, Any]) -> List[str]:
-        authors = []
+        authors: List[str] = []
         creator = entry.get("dc:creator")
         if creator:
             authors.append(str(creator).strip())
         return authors
+
+    def _extract_best_url(self, entry: Dict[str, Any], doi: str) -> str:
+        """
+        给邮件里的“查看原文”找一个尽量适合人点击的链接。
+
+        优先级：
+        1. DOI 落地页
+        2. link 里 ref=scidir / doi / scopus / alternate / self
+        3. prism:url
+        4. 空字符串
+        """
+        if doi:
+            return f"https://doi.org/{doi}"
+
+        preferred = {
+            "scidir": "",
+            "doi": "",
+            "scopus": "",
+            "alternate": "",
+            "self": "",
+        }
+        fallback = ""
+
+        links = entry.get("link", [])
+        if isinstance(links, list):
+            for item in links:
+                if not isinstance(item, dict):
+                    continue
+                ref = str(item.get("@ref", "")).strip().lower()
+                href = str(item.get("@href", "")).strip()
+                if not href:
+                    continue
+                if not fallback:
+                    fallback = href
+                if ref in preferred and not preferred[ref]:
+                    preferred[ref] = href
+
+        for key in ("scidir", "doi", "scopus", "alternate", "self"):
+            if preferred[key]:
+                return preferred[key]
+
+        prism_url = str(entry.get("prism:url", "")).strip()
+        if prism_url:
+            return prism_url
+
+        return fallback
+
+    def _extract_pdf_url(self, entry: Dict[str, Any]) -> str:
+        """
+        Scopus Search 结果通常不稳定提供可直接下载的 PDF 链接。
+        这里仅在明确出现 pdf 标记链接时才返回，否则留空。
+        """
+        links = entry.get("link", [])
+        if isinstance(links, list):
+            for item in links:
+                if not isinstance(item, dict):
+                    continue
+                ref = str(item.get("@ref", "")).strip().lower()
+                href = str(item.get("@href", "")).strip()
+                if not href:
+                    continue
+                if "pdf" in ref or href.lower().endswith(".pdf"):
+                    return href
+        return ""
 
     def _entry_to_paper(self, entry: Dict[str, Any]) -> Optional[Paper]:
         title = (entry.get("dc:title") or "").strip()
@@ -179,29 +244,19 @@ class PaperQueryAgent:
         published = published_dt.strftime("%Y-%m-%d") if published_dt else ""
 
         abstract = (entry.get("dc:description") or "").strip()
-        doi = entry.get("prism:doi") or ""
-        eid = entry.get("eid") or ""
-        subtype = entry.get("subtypeDescription") or ""
-        source = entry.get("prism:publicationName") or ""
+        doi = str(entry.get("prism:doi") or "").strip()
+        eid = str(entry.get("eid") or "").strip()
+        subtype = str(entry.get("subtypeDescription") or "").strip()
+        source = str(entry.get("prism:publicationName") or "").strip()
 
-        url = ""
-        links = entry.get("link", [])
-        if isinstance(links, list):
-            for item in links:
-                if isinstance(item, dict):
-                    href = item.get("@href", "")
-                    if href:
-                        url = href
-                        break
+        url = self._extract_best_url(entry, doi)
+        pdf_url = self._extract_pdf_url(entry)
 
-        if not url and doi:
-            url = f"https://doi.org/{doi}"
-
-        categories = []
+        categories: List[str] = []
         if source:
-            categories.append(str(source))
+            categories.append(source)
         if subtype:
-            categories.append(str(subtype))
+            categories.append(subtype)
         if doi:
             categories.append(f"doi:{doi}")
         if eid:
@@ -213,7 +268,7 @@ class PaperQueryAgent:
             abstract=abstract,
             published=published,
             url=url,
-            pdf_url="",
+            pdf_url=pdf_url,
             categories=categories,
         )
 
@@ -255,7 +310,7 @@ class PaperQueryAgent:
                         try:
                             paper_dt = datetime.strptime(paper.published, "%Y-%m-%d")
                         except Exception:
-                            pass
+                            paper_dt = None
 
                     if paper_dt and paper_dt >= since_date:
                         page_has_recent = True
